@@ -3,29 +3,24 @@ import fetch from "node-fetch";
 
 const router = express.Router();
 
-/* ---------------- NORMALIZER (CRITICAL FIX) ---------------- */
+/* ---------------- NORMALIZER ---------------- */
 
-function normalizeIngredient(raw) {
+function normalizeIngredient(raw = {}) {
   return {
-    name: raw?.name || "Unknown ingredient",
-
-    severity: (raw?.severity || "low").toLowerCase(),
-
+    name: raw.name || "Unknown ingredient",
+    severity: (raw.severity || "Low").toLowerCase(),
     what_it_is:
-      raw?.what_it_is ||
+      raw.what_it_is ||
       "This ingredient is commonly used in food products.",
-
     why_it_is_used:
-      raw?.why_it_is_used ||
+      raw.why_it_is_used ||
       "It is added to improve texture, stability, taste, or functionality.",
-
     tradeoffs:
-      raw?.tradeoffs ||
+      raw.tradeoffs ||
       "No major trade-offs when consumed within recommended limits.",
-
     uncertainty:
-      raw?.uncertainty ||
-      "Scientific understanding is generally clear, though minor variations may exist."
+      raw.uncertainty ||
+      "Scientific understanding is generally clear, though minor variations may exist.",
   };
 }
 
@@ -39,7 +34,12 @@ router.post("/reasoning", async (req, res) => {
       return res.status(400).json({ error: "Ingredients required" });
     }
 
-    /* ---------------- FINAL PROMPT (DO NOT CHANGE FRONTEND) ---------------- */
+    const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+    if (!OPENROUTER_API_KEY) {
+      throw new Error("Missing OPENROUTER_API_KEY");
+    }
+
+    /* ---------------- PROMPT ---------------- */
 
     const prompt = `
 You are an AI Ingredient Intelligence assistant.
@@ -141,51 +141,61 @@ Fields (mandatory, never omit):
 Never merge fields.
 Never return empty strings.
 Never omit keys.
-""
-}
 `;
 
     /* ---------------- OPENROUTER CALL ---------------- */
 
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: "openai/gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.3
-      })
-    });
+    const aiResponse = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "http://localhost:8000",
+          "X-Title": "IngrediAI",
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a food ingredient expert. Respond ONLY with valid JSON.",
+            },
+            {
+              role: "user",
+              content: prompt,
+            },
+          ],
+          temperature: 0.3,
+        }),
+      }
+    );
 
-    const data = await response.json();
+    const raw = await aiResponse.json();
 
-    const rawContent = data?.choices?.[0]?.message?.content;
-
-    if (!rawContent) {
+    if (!raw?.choices?.[0]?.message?.content) {
+      console.error("RAW AI RESPONSE:", raw);
       throw new Error("Empty AI response");
     }
 
-    const parsed = JSON.parse(rawContent);
+    const parsed = JSON.parse(raw.choices[0].message.content);
 
-    /* ---------------- APPLY NORMALIZATION ---------------- */
+    /* ---------------- NORMALIZE ---------------- */
 
     const normalizedIngredients = (parsed.ingredients || []).map(
       normalizeIngredient
     );
 
-    /* ---------------- FINAL RESPONSE (FRONTEND SAFE) ---------------- */
+    /* ---------------- RESPONSE ---------------- */
 
     res.json({
       ingredients: normalizedIngredients,
       overall_nutrition_per_100g:
         parsed.overall_nutrition_per_100g || null,
-      overall_conclusion:
-        parsed.overall_conclusion || null
+      overall_conclusion: parsed.overall_conclusion || null,
     });
-
   } catch (err) {
     console.error("AI processing failed:", err);
     res.status(500).json({ error: "AI processing failed" });
