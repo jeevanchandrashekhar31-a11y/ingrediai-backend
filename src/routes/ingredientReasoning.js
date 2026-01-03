@@ -1,14 +1,47 @@
 import express from "express";
+import fetch from "node-fetch";
 
 const router = express.Router();
 
-/* -------- GREETING DETECTION -------- */
-const isGreeting = (text) =>
-  /^(hi|hello|hey|hii|yo)\b/i.test(text.trim());
+/* ---------------- NORMALIZER (CRITICAL FIX) ---------------- */
 
-/* -------- PROMPT BUILDER -------- */
-function buildPrompt(ingredients) {
-  return `
+function normalizeIngredient(raw) {
+  return {
+    name: raw?.name || "Unknown ingredient",
+
+    severity: (raw?.severity || "low").toLowerCase(),
+
+    what_it_is:
+      raw?.what_it_is ||
+      "This ingredient is commonly used in food products.",
+
+    why_it_is_used:
+      raw?.why_it_is_used ||
+      "It is added to improve texture, stability, taste, or functionality.",
+
+    tradeoffs:
+      raw?.tradeoffs ||
+      "No major trade-offs when consumed within recommended limits.",
+
+    uncertainty:
+      raw?.uncertainty ||
+      "Scientific understanding is generally clear, though minor variations may exist."
+  };
+}
+
+/* ---------------- ROUTE ---------------- */
+
+router.post("/reasoning", async (req, res) => {
+  try {
+    const { ingredients } = req.body;
+
+    if (!ingredients) {
+      return res.status(400).json({ error: "Ingredients required" });
+    }
+
+    /* ---------------- FINAL PROMPT (DO NOT CHANGE FRONTEND) ---------------- */
+
+    const prompt = `
 You are an AI Ingredient Intelligence assistant.
 
 Your job is to analyze a list of food ingredients and respond in a calm,
@@ -110,78 +143,52 @@ Never return empty strings.
 Never omit keys.
 ""
 }
-
-${ingredients}
 `;
-}
 
-/* -------- POST /api/reasoning -------- */
-router.post("/", async (req, res) => {
-  const { ingredients } = req.body;
+    /* ---------------- OPENROUTER CALL ---------------- */
 
-  if (!ingredients || typeof ingredients !== "string") {
-    return res.status(400).json({ error: "Invalid ingredients input" });
-  }
-
-  /* ---- Greeting short-circuit ---- */
-  if (isGreeting(ingredients)) {
-    return res.json({
-      greeting:
-        "Hi! I’m your ingredient intelligence assistant. Paste ingredients and I’ll break them down for you.",
-      ingredients: [],
-      overall_nutrition_per_100g: null,
-      overall_conclusion: null,
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.3
+      })
     });
-  }
 
-  const prompt = buildPrompt(ingredients);
+    const data = await response.json();
 
-  try {
-    const response = await fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          "HTTP-Referer": "https://ingrediai.app",
-          "X-Title": "IngrediAI",
-        },
-        body: JSON.stringify({
-          model: "openai/gpt-4o-mini",
-          temperature: 0.7,
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are a JSON-only API. Any response not in JSON is invalid.",
-            },
-            { role: "user", content: prompt },
-          ],
-        }),
-      }
-    );
+    const rawContent = data?.choices?.[0]?.message?.content;
 
-    const raw = await response.text();
-
-    if (!response.ok) {
-      console.error("❌ OpenRouter error:", raw);
-      throw new Error("OpenRouter failed");
+    if (!rawContent) {
+      throw new Error("Empty AI response");
     }
 
-    const data = JSON.parse(raw);
-    const content = data.choices?.[0]?.message?.content;
+    const parsed = JSON.parse(rawContent);
 
-    if (!content) throw new Error("Empty AI response");
+    /* ---------------- APPLY NORMALIZATION ---------------- */
 
-    const parsed = JSON.parse(content);
+    const normalizedIngredients = (parsed.ingredients || []).map(
+      normalizeIngredient
+    );
 
-    return res.json(parsed);
-  } catch (err) {
-    console.error("❌ AI processing failed:", err.message);
-    return res.status(500).json({
-      error: "AI processing failed",
+    /* ---------------- FINAL RESPONSE (FRONTEND SAFE) ---------------- */
+
+    res.json({
+      ingredients: normalizedIngredients,
+      overall_nutrition_per_100g:
+        parsed.overall_nutrition_per_100g || null,
+      overall_conclusion:
+        parsed.overall_conclusion || null
     });
+
+  } catch (err) {
+    console.error("AI processing failed:", err);
+    res.status(500).json({ error: "AI processing failed" });
   }
 });
 
