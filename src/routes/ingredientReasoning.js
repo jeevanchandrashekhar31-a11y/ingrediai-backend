@@ -2,96 +2,93 @@ import express from "express";
 
 const router = express.Router();
 
-/* -------- Greeting detection -------- */
 function isGreeting(text) {
   return /^(hi|hello|hey|hii|yo)\b/i.test(text.trim());
 }
 
-/* -------- Prompt Builder -------- */
 function buildPrompt(ingredients) {
   return `
 You are an expert food ingredient intelligence AI.
 
-CRITICAL RULES:
-- NO scripted or repetitive language
-- Think freshly for THIS ingredient combination
-- Nutrition must be for the FULL ingredient set
-- Nutrition must be PER 100 GRAMS (approximate, realistic)
-- Be clear, neutral, and practical
+Rules:
+- No scripted or repeated language
+- Think uniquely for this ingredient set
+- Nutrition is for the FULL ingredient list
+- Nutrition is per 100 grams (approximate)
 
-For EACH ingredient:
-1. What it is
-2. Why it is used
-3. Trade-offs
-4. Uncertainty
-5. Severity (one word only)
+For each ingredient:
+- What it is
+- Why it is used
+- Trade-offs
+- Uncertainty
+- Severity (one word)
 
-AFTER all ingredients:
+After all ingredients:
 - Overall nutrition per 100g:
-  Calories (kcal)
-  Carbohydrates (g)
-  Sugars (g)
-  Fats (g)
-  Protein (g)
-  Fiber (g)
+  Calories, Carbs, Sugars, Fats, Protein, Fiber
+- Overall conclusion
 
-- Overall conclusion (non-scripted, unique)
-
-Ingredient list:
+Ingredients:
 ${ingredients}
 `;
 }
 
-/* -------- POST /api/reasoning -------- */
 router.post("/", async (req, res) => {
   try {
     const { ingredients } = req.body;
 
-    if (!ingredients || typeof ingredients !== "string") {
-      return res.status(400).json({ error: "Ingredients text is required" });
+    if (!ingredients) {
+      return res.status(400).json({ error: "Ingredients required" });
     }
 
-    // Greeting response
     if (isGreeting(ingredients)) {
       return res.json({
         analysis:
-          "Hi! I’m your ingredient intelligence assistant. Tell me the ingredients and I’ll break them down for you.",
+          "Hi! I’m your ingredient intelligence assistant. Tell me the ingredients and I’ll explain them.",
       });
     }
 
-    const prompt = buildPrompt(ingredients);
-
-    // ✅ Node 18+ has fetch globally (Render supports this)
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.9,
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      console.error("OpenAI error:", err);
-      return res.status(500).json({ error: "AI processing failed" });
+    if (!process.env.OPENAI_API_KEY) {
+      console.error("❌ OPENAI_API_KEY missing");
+      return res.status(500).json({ error: "Server misconfigured" });
     }
 
-    const data = await response.json();
-    const output = data.choices?.[0]?.message?.content;
+    const response = await fetch(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: buildPrompt(ingredients) }],
+          temperature: 0.9,
+        }),
+      }
+    );
+
+    const raw = await response.text();
+
+    if (!response.ok) {
+      console.error("❌ OpenAI RAW ERROR:", raw);
+      return res.status(500).json({
+        error: "OpenAI rejected request",
+        details: raw,
+      });
+    }
+
+    const data = JSON.parse(raw);
 
     res.json({
       ingredients,
-      analysis: output,
+      analysis: data.choices[0].message.content,
       generatedAt: new Date().toISOString(),
     });
   } catch (err) {
-    console.error("Backend error:", err);
-    res.status(500).json({ error: "Failed to process ingredient reasoning" });
+    console.error("❌ Backend crash:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
