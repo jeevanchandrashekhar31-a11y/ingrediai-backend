@@ -85,7 +85,30 @@ OUTPUT FORMAT (JSON ONLY):
     "protein_g": "",
     "fiber_g": ""
   },
-  "overall_conclusion": ""
+  "overall_conclusion":
+  
+  For EACH ingredient, you MUST return ALL of the following fields.
+If unsure, still provide a best-effort explanation.
+
+Fields (mandatory, never omit):
+- what_it_is
+- why_it_is_used
+- tradeoffs
+- uncertainty
+
+For EACH ingredient, you MUST return ALL of the following fields.
+If unsure, still provide a best-effort explanation.
+
+Fields (mandatory, never omit):
+- what_it_is
+- why_it_is_used
+- tradeoffs
+- uncertainty
+
+Never merge fields.
+Never return empty strings.
+Never omit keys.
+""
 }
 
 ${ingredients}
