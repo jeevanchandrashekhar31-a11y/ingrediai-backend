@@ -1,69 +1,33 @@
 import express from "express";
-import fetch from "node-fetch";
 
 const router = express.Router();
 
-/* ===============================
-   POST /api/reasoning
-================================ */
-router.post("/reasoning", async (req, res) => {
-  try {
-    const { ingredients } = req.body;
+/* Greeting detection */
+function isGreeting(text) {
+  return /^(hi|hello|hey|hii|hiii|yo)\b/i.test(text.trim());
+}
 
-    if (!ingredients || ingredients.trim().length === 0) {
-      return res.status(400).json({
-        error: "Ingredients are required",
-      });
-    }
+/* Prompt builder */
+function buildPrompt(ingredients) {
+  return `
+You are an expert ingredient intelligence AI.
 
-    const input = ingredients.trim();
-    const normalized = input.toLowerCase();
+Rules:
+- No scripted or repeated language
+- Think uniquely for every input
+- Nutrition must be for the FULL ingredient set (not per ingredient)
+- Nutrition must be PER 100 GRAMS
+- Be realistic and approximate
 
-    /* -------------------------------
-       Conversation handling
-    -------------------------------- */
-    const greetings = [
-      "hi",
-      "hello",
-      "hey",
-      "good morning",
-      "good evening",
-      "good afternoon",
-    ];
+For EACH ingredient, explain:
+• What it is
+• Why it is used
+• Trade-offs
+• Uncertainty
+• Severity (ONE word only: low / moderate / high)
 
-    if (greetings.includes(normalized)) {
-      return res.json({
-        type: "conversation",
-        response:
-          "Hi! I’m your ingredient intelligence assistant. Tell me the ingredients or food you want to understand.",
-      });
-    }
-
-    /* -------------------------------
-       AI reasoning prompt
-    -------------------------------- */
-    const prompt = `
-You are an ingredient intelligence assistant.
-
-User input:
-"${input}"
-
-Your task:
-
-1. Identify each ingredient in the list.
-2. For EACH ingredient, explain:
-   - What it is
-   - Why it is used
-   - Trade-offs
-   - Uncertainty
-   - Severity (ONE WORD ONLY: Low, Medium, or High)
-
-IMPORTANT RULES:
-- Do NOT include nutrition numbers for individual ingredients.
-- Do NOT use scripted or repeated phrasing.
-
-3. After all ingredient explanations, provide:
-   Overall Nutrition per 100g (combined estimate):
+After ALL ingredients:
+1) Overall nutrition per 100g:
    - Calories (kcal)
    - Carbohydrates (g)
    - Sugars (g)
@@ -71,23 +35,40 @@ IMPORTANT RULES:
    - Protein (g)
    - Fiber (g)
 
-4. Then provide:
-   - Overall nutrition assessment
-   - A unique, human-style overall conclusion
+2) Overall conclusion (fresh, non-scripted)
 
-STYLE:
-- Natural language
-- No templates
-- No repeated wording
-- Realistic but approximate values
+Ingredients:
+${ingredients}
 `;
+}
+
+router.post("/reasoning", async (req, res) => {
+  try {
+    const { ingredients } = req.body;
+
+    if (!ingredients || typeof ingredients !== "string") {
+      return res.status(400).json({
+        error: "Ingredients must be a text string",
+      });
+    }
+
+    /* Greeting shortcut */
+    if (isGreeting(ingredients)) {
+      return res.json({
+        type: "greeting",
+        message:
+          "Hi 👋 I’m your ingredient intelligence assistant. Paste ingredients and I’ll break them down clearly.",
+      });
+    }
+
+    const prompt = buildPrompt(ingredients);
 
     const response = await fetch(
       "https://openrouter.ai/api/v1/chat/completions",
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
           "Content-Type": "application/json",
           "HTTP-Referer": "https://ingrediai.app",
           "X-Title": "IngrediAI",
@@ -98,7 +79,7 @@ STYLE:
             {
               role: "system",
               content:
-                "You generate non-scripted, thoughtful ingredient analysis like a real nutrition expert.",
+                "You are a critical food ingredient analyst. Avoid templates and generic phrasing.",
             },
             {
               role: "user",
@@ -106,29 +87,25 @@ STYLE:
             },
           ],
           temperature: 0.85,
-          frequency_penalty: 0.6,
-          presence_penalty: 0.6,
         }),
       }
     );
 
     if (!response.ok) {
-      const err = await response.text();
-      console.error("OpenRouter error:", err);
-      return res.status(500).json({ error: "AI provider error" });
+      const errText = await response.text();
+      throw new Error(errText);
     }
 
     const data = await response.json();
-    const output = data?.choices?.[0]?.message?.content;
+    const output = data.choices?.[0]?.message?.content;
 
     res.json({
-      type: "analysis",
-      ingredients: input,
-      result: output,
+      ingredients,
+      analysis: output,
       generatedAt: new Date().toISOString(),
     });
   } catch (err) {
-    console.error("Ingredient reasoning error:", err);
+    console.error("Ingredient reasoning error:", err.message);
     res.status(500).json({
       error: "Failed to process ingredient reasoning",
     });
