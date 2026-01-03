@@ -68,32 +68,30 @@ router.post("/", async (req, res) => {
     }
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        "HTTP-Referer": "https://ingrediai.app",
-        "X-Title": "IngrediAI",
-      },
-      body: JSON.stringify({
-        model: "openai/gpt-4o-mini",
-        messages: [
-          {
-            role: "user",
-            content: buildPrompt(ingredients),
-          },
-        ],
-        temperature: 0.9,
-      }),
-    });
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+    "HTTP-Referer": "https://ingrediai.app",
+    "X-Title": "IngrediAI",
+  },
+  body: JSON.stringify({
+    model: "openai/gpt-4o-mini",
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0.85,
+  }),
+});
 
-    if (!response.ok) {
-      const err = await response.text();
-      return res.status(500).json({
-        error: "OpenRouter request failed",
-        details: err,
-      });
-    }
+
+   if (!response.ok) {
+  const text = await response.text();
+  console.error("OpenRouter error:", text);
+  return res.status(500).json({
+    error: "AI processing failed",
+    debug: text,
+  });
+}
+
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
