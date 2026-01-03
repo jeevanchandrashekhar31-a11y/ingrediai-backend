@@ -71,16 +71,27 @@ router.post("/", async (req, res) => {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
-    "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+    Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
     "HTTP-Referer": "https://ingrediai.app",
     "X-Title": "IngrediAI",
   },
   body: JSON.stringify({
     model: "openai/gpt-4o-mini",
-    messages: [{ role: "user", content: prompt }],
-    temperature: 0.85,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are an ingredient intelligence AI. Respond ONLY in valid JSON. Do not add markdown or text outside JSON.",
+      },
+      {
+        role: "user",
+        content: prompt,
+      },
+    ],
+    temperature: 0.8,
   }),
 });
+
 
 
    if (!response.ok) {
@@ -94,11 +105,19 @@ router.post("/", async (req, res) => {
 
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const output = data.choices?.[0]?.message?.content;
 
-    const parsed = JSON.parse(content);
+    let parsed;
+try {
+  parsed = JSON.parse(output);
+} catch {
+  throw new Error("Invalid JSON from model");
+}
 
-    res.json(parsed);
+return res.json(parsed);
+
+
+   
   } catch (err) {
     console.error("Ingredient reasoning error:", err);
     res.status(500).json({ error: "AI processing failed" });
