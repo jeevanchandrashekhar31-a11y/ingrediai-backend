@@ -7,6 +7,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// 🔥 FINAL & CORRECT ROUTE
 app.use("/api/reasoning", ingredientReasoning);
 
 const PORT = process.env.PORT || 8000;
