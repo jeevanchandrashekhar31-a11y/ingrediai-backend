@@ -1,24 +1,23 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
-import ingredientReasoningRoute from "./routes/ingredientReasoning.js";
-
-console.log("Starting backend...");
-
-dotenv.config();
+import ingredientReasoning from "./routes/ingredientReasoning.js";
 
 const app = express();
-const PORT = process.env.PORT || 8000;
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 
+// Health check (VERY useful on Render)
 app.get("/", (req, res) => {
-  res.send("Ingredient Reasoning Backend Running");
+  res.json({ status: "IngrediAI backend running" });
 });
 
-app.use("/api/reasoning/ingredient", ingredientReasoningRoute);
+// ✅ MOUNT ROUTES HERE
+app.use("/api", ingredientReasoning);
 
+// Port
+const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
-  console.log(`Backend running on http://localhost:${PORT}`);
+  console.log(`Backend running on port ${PORT}`);
 });

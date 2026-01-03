@@ -1,194 +1,136 @@
 import express from "express";
-import { callOpenRouter } from "../ai/openrouterClient.js";
+import fetch from "node-fetch";
 
 const router = express.Router();
-// ---------- SEVERITY INFERENCE ----------
-function inferSeverity(name) {
-  const n = name.toLowerCase();
 
-  if (["salt", "sodium", "sugar", "glucose", "hfcs"].some(k => n.includes(k))) {
-    return "HIGH";
-  }
-
-  if (["oil", "fat", "flour", "milk powder"].some(k => n.includes(k))) {
-    return "MODERATE";
-  }
-
-  return "LOW";
-}
-
-
-/* ---------------- Severity Logic ---------------- */
-
-function deriveSeverity(text) {
-  const t = text.toLowerCase();
-
-  if (
-    t.includes("limit") ||
-    t.includes("excess") ||
-    t.includes("risk") ||
-    t.includes("high intake") ||
-    t.includes("pay attention") ||
-    t.includes("not ideal daily")
-  ) {
-    return "HIGH";
-  }
-
-  if (
-    t.includes("moderation") ||
-    t.includes("depends") ||
-    t.includes("frequency") ||
-    t.includes("context")
-  ) {
-    return "MODERATE";
-  }
-
-  return "LOW";
-}
-
-/* ---------------- Fallback ---------------- */
-
-function fallbackIngredient(name) {
-  return {
-    name,
-    severity: "MODERATE",
-    why_it_matters:
-      "Plays a role in taste, texture, or shelf life of foods.",
-    tradeoffs:
-      "Improves product quality but increases processing.",
-    who_might_care:
-      "People who frequently consume packaged foods.",
-    confidence_uncertainty:
-      "Widely used with generally understood effects.",
-  };
-}
-
-/* ---------------- Route ---------------- */
-
-router.post("/", async (req, res) => {
-  const { ingredients, product_context } = req.body;
-
-  if (!ingredients) {
-    return res.status(400).json({ error: "Ingredients are required" });
-  }
-
-  const ingredientList = ingredients
-    .split(",")
-    .map((i) => i.trim())
-    .filter(Boolean);
-
+/* ===============================
+   POST /api/reasoning
+================================ */
+router.post("/reasoning", async (req, res) => {
   try {
-    const ingredientResults = [];
+    const { ingredients } = req.body;
 
-    for (const ingredient of ingredientList) {
-      try {
-        /* ---------------- SUPERIOR SYSTEM PROMPT ---------------- */
-
-        const systemPrompt = `
-You are a senior food-ingredient intelligence expert.
-
-Your job:
-Explain ingredients so people can make better food decisions.
-
-ABSOLUTE RULES:
-- Output ONLY valid JSON
-- No markdown
-- No extra text
-- No emojis
-- No medical advice
-- No fear-based language
-
-STYLE RULES:
-- Each field = short bullet-style sentences (not paragraphs)
-- 2–3 sentences max per field
-- Clear benefits AND downsides
-- Concrete, everyday language
-- No repetition across fields
-- Neutral, confident tone
-
-QUALITY BAR:
-Your answer should feel:
-- Trustworthy
-- Calm
-- Decision-ready
-- Better than Google summaries
-
-Return EXACTLY this structure:
-{
-  "name": "${ingredient}",
-  "why_it_matters": "",
-  "tradeoffs": "",
-  "who_might_care": "",
-  "confidence_uncertainty": ""
-}
-`;
-
-        const userPrompt = `
-Ingredient: ${ingredient}
-Product context: ${product_context || "packaged food"}
-`;
-
-        const raw = await callOpenRouter(systemPrompt, userPrompt);
-
-        const cleaned = raw.replace(/```json|```/g, "").trim();
-        const parsed = JSON.parse(cleaned);
-
-        const severity = deriveSeverity(
-          `${parsed.tradeoffs} ${parsed.who_might_care}`
-        );
-ingredientResults.push({
-  ...parsed,
-  severity: inferSeverity(ingredient),
-});
-
-      } catch {
-        ingredientResults.push(fallbackIngredient(ingredient));
-      }
+    if (!ingredients || ingredients.trim().length === 0) {
+      return res.status(400).json({
+        error: "Ingredients are required",
+      });
     }
 
-    /* ---------------- Overall Nutrition (SHORT & SCANNABLE) ---------------- */
+    const input = ingredients.trim();
+    const normalized = input.toLowerCase();
 
-    const nutritionPrompt = `
-You are a food nutrition expert.
+    /* -------------------------------
+       Conversation handling
+    -------------------------------- */
+    const greetings = [
+      "hi",
+      "hello",
+      "hey",
+      "good morning",
+      "good evening",
+      "good afternoon",
+    ];
 
-Analyze the OVERALL NUTRITION of a product based ONLY on these ingredients:
-${ingredientList.join(", ")}
+    if (greetings.includes(normalized)) {
+      return res.json({
+        type: "conversation",
+        response:
+          "Hi! I’m your ingredient intelligence assistant. Tell me the ingredients or food you want to understand.",
+      });
+    }
 
-RULES:
-- Be ingredient-aware (e.g., salt ≠ carbs, oil ≠ sugar)
-- No generic filler sentences
-- No medical advice
-- 2–3 concise sentences max
-- Mention what dominates (salt, fat, sugar, fiber, protein)
-- If ingredient is mineral-only (like salt), say so clearly
+    /* -------------------------------
+       AI reasoning prompt
+    -------------------------------- */
+    const prompt = `
+You are an ingredient intelligence assistant.
 
-Return plain text only.
+User input:
+"${input}"
+
+Your task:
+
+1. Identify each ingredient in the list.
+2. For EACH ingredient, explain:
+   - What it is
+   - Why it is used
+   - Trade-offs
+   - Uncertainty
+   - Severity (ONE WORD ONLY: Low, Medium, or High)
+
+IMPORTANT RULES:
+- Do NOT include nutrition numbers for individual ingredients.
+- Do NOT use scripted or repeated phrasing.
+
+3. After all ingredient explanations, provide:
+   Overall Nutrition per 100g (combined estimate):
+   - Calories (kcal)
+   - Carbohydrates (g)
+   - Sugars (g)
+   - Fats (g)
+   - Protein (g)
+   - Fiber (g)
+
+4. Then provide:
+   - Overall nutrition assessment
+   - A unique, human-style overall conclusion
+
+STYLE:
+- Natural language
+- No templates
+- No repeated wording
+- Realistic but approximate values
 `;
 
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://ingrediai.app",
+          "X-Title": "IngrediAI",
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content:
+                "You generate non-scripted, thoughtful ingredient analysis like a real nutrition expert.",
+            },
+            {
+              role: "user",
+              content: prompt,
+            },
+          ],
+          temperature: 0.85,
+          frequency_penalty: 0.6,
+          presence_penalty: 0.6,
+        }),
+      }
+    );
 
-    let overall_nutrition =
-      "Higher in refined carbohydrates and fats, with limited protein and fiber. More energy-dense than filling. Best enjoyed occasionally.";
+    if (!response.ok) {
+      const err = await response.text();
+      console.error("OpenRouter error:", err);
+      return res.status(500).json({ error: "AI provider error" });
+    }
 
-    try {
-      overall_nutrition = await callOpenRouter(
-        "You summarize nutrition clearly and briefly.",
-        nutritionPrompt
-      );
-    } catch {}
+    const data = await response.json();
+    const output = data?.choices?.[0]?.message?.content;
 
-    return res.json({
-      ingredients: ingredientResults,
-      overall_nutrition,
-      overall_conclusion:
-        "Convenient and enjoyable, but best balanced with more whole, minimally processed foods.",
+    res.json({
+      type: "analysis",
+      ingredients: input,
+      result: output,
+      generatedAt: new Date().toISOString(),
     });
-  } catch {
-    return res.json({
-      ingredients: ingredientList.map(fallbackIngredient),
-      overall_nutrition:
-        "Energy-dense with limited nutritional diversity.",
-      overall_conclusion:
-        "Occasional use is fine, but not ideal as a daily staple.",
+  } catch (err) {
+    console.error("Ingredient reasoning error:", err);
+    res.status(500).json({
+      error: "Failed to process ingredient reasoning",
     });
   }
 });
