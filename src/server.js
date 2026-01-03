@@ -1,6 +1,9 @@
 import express from "express";
 import cors from "cors";
 import ingredientReasoning from "./routes/ingredientReasoning.js";
+import ocrRoute from "./routes/ocr.js";
+
+app.use("/api/ocr", ocrRoute);
 
 const app = express();
 
