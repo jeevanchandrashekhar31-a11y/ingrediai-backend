@@ -1,34 +1,23 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
-
 import ingredientReasoningRoute from "./routes/ingredientReasoning.js";
-import ocrRoute from "./routes/ocr.js";
 
-dotenv.config();
+const app = express();
 
-/* ---------------- APP INIT ---------------- */
-
-const app = express(); // ✅ MUST COME FIRST
-
-/* ---------------- MIDDLEWARE ---------------- */
-
+/* -------- MIDDLEWARE -------- */
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "2mb" }));
 
-/* ---------------- ROUTES ---------------- */
+/* -------- ROUTES -------- */
+app.use("/api/reasoning", ingredientReasoningRoute);
 
+/* -------- HEALTH CHECK -------- */
 app.get("/", (req, res) => {
-  res.json({ status: "ok", service: "IngrediAI Backend" });
+  res.send("IngrediAI backend running");
 });
 
-app.use("/api/reasoning", ingredientReasoningRoute);
-app.use("/api/ocr", ocrRoute);
-
-/* ---------------- SERVER ---------------- */
-
+/* -------- START SERVER -------- */
 const PORT = process.env.PORT || 8000;
-
 app.listen(PORT, () => {
-  console.log(`IngrediAI backend running on port ${PORT}`);
+  console.log(`🚀 IngrediAI backend running on port ${PORT}`);
 });
