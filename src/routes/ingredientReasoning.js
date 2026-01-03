@@ -12,81 +12,69 @@ function buildPrompt(ingredients) {
   return `
 You are an expert ingredient intelligence AI.
 
-Rules:
+CRITICAL RULES:
 - No scripted or repeated language
 - Think uniquely for every input
-- Nutrition must be for the FULL ingredient set (not per ingredient)
+- Nutrition must be for the FULL ingredient set
 - Nutrition must be PER 100 GRAMS
-- Be realistic and approximate
+- Values must be realistic and approximate
 
 For EACH ingredient, explain:
-• What it is
-• Why it is used
-• Trade-offs
-• Uncertainty
-• Severity (ONE word only: low / moderate / high)
+- What it is
+- Why it is used
+- Trade-offs
+- Scientific uncertainty
+- Severity (ONE WORD only: Low / Medium / High)
 
-After ALL ingredients:
-1) Overall nutrition per 100g:
-   - Calories (kcal)
-   - Carbohydrates (g)
-   - Sugars (g)
-   - Fats (g)
-   - Protein (g)
-   - Fiber (g)
+AFTER all ingredient explanations:
 
-2) Overall conclusion (fresh, non-scripted)
+### Overall Nutrition (per 100g)
+- Calories (kcal)
+- Carbohydrates (g)
+- Sugars (g)
+- Fats (g)
+- Protein (g)
+- Fiber (g)
 
-Ingredients:
+### Overall Conclusion
+- Unique to THIS ingredient combination
+- No generic wording
+
+Ingredient list:
 ${ingredients}
 `;
 }
 
-router.post("/reasoning", async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const { ingredients } = req.body;
 
     if (!ingredients || typeof ingredients !== "string") {
-      return res.status(400).json({
-        error: "Ingredients must be a text string",
-      });
+      return res.status(400).json({ error: "Invalid ingredients input" });
     }
 
     /* Greeting shortcut */
     if (isGreeting(ingredients)) {
       return res.json({
-        type: "greeting",
-        message:
-          "Hi 👋 I’m your ingredient intelligence assistant. Paste ingredients and I’ll break them down clearly.",
+        analysis:
+          "Hi! I’m your ingredient intelligence assistant. Paste a list of food ingredients and I’ll break them down, assess trade-offs, and estimate overall nutrition per 100g.",
       });
     }
 
     const prompt = buildPrompt(ingredients);
 
     const response = await fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
+      "https://api.openai.com/v1/chat/completions",
       {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": "https://ingrediai.app",
-          "X-Title": "IngrediAI",
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         },
         body: JSON.stringify({
-          model: "openai/gpt-4o-mini",
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are a critical food ingredient analyst. Avoid templates and generic phrasing.",
-            },
-            {
-              role: "user",
-              content: prompt,
-            },
-          ],
-          temperature: 0.85,
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.9,
         }),
       }
     );
@@ -97,15 +85,14 @@ router.post("/reasoning", async (req, res) => {
     }
 
     const data = await response.json();
-    const output = data.choices?.[0]?.message?.content;
 
     res.json({
       ingredients,
-      analysis: output,
+      analysis: data.choices?.[0]?.message?.content ?? "",
       generatedAt: new Date().toISOString(),
     });
   } catch (err) {
-    console.error("Ingredient reasoning error:", err.message);
+    console.error("Ingredient reasoning error:", err);
     res.status(500).json({
       error: "Failed to process ingredient reasoning",
     });
