@@ -13,31 +13,20 @@ function clean(value, fallback) {
 
 function normalizeIngredient(raw) {
   return {
-    name: clean(raw?.name, "Unknown ingredient"),
+    name: raw?.name ?? null,
 
-    severity: clean(raw?.severity, "low").toLowerCase(),
+    severity: (raw?.severity ?? "low").toLowerCase(),
 
-    what_it_is: clean(
-      raw?.what_it_is,
-      "This ingredient is a commonly used component in food products."
-    ),
+    what_it_is: raw?.what_it_is?.trim() || null,
 
-    why_it_is_used: clean(
-      raw?.why_it_is_used,
-      "It is included for functional reasons such as texture, stability, or taste."
-    ),
+    why_it_is_used: raw?.why_it_is_used?.trim() || null,
 
-    tradeoffs: clean(
-      raw?.tradeoffs,
-      "It has benefits in food formulation but should be consumed in moderation."
-    ),
+    tradeoffs: raw?.tradeoffs?.trim() || null,
 
-    uncertainty: clean(
-      raw?.uncertainty,
-      "Scientific understanding is generally clear, though minor variations may exist."
-    ),
+    uncertainty: raw?.uncertainty?.trim() || null,
   };
 }
+
 
 
 /* ---------------- ROUTE ---------------- */
