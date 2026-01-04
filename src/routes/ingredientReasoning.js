@@ -5,24 +5,40 @@ const router = express.Router();
 
 /* ---------------- NORMALIZER ---------------- */
 
-function normalizeIngredient(raw = {}) {
+function clean(value, fallback) {
+  if (typeof value !== "string") return fallback;
+  if (!value.trim()) return fallback;
+  return value.trim();
+}
+
+function normalizeIngredient(raw) {
   return {
-    name: raw.name || "Unknown ingredient",
-    severity: (raw.severity || "Low").toLowerCase(),
-    what_it_is:
-      raw.what_it_is ||
-      "This ingredient is commonly used in food products.",
-    why_it_is_used:
-      raw.why_it_is_used ||
-      "It is added to improve texture, stability, taste, or functionality.",
-    tradeoffs:
-      raw.tradeoffs ||
-      "No major trade-offs when consumed within recommended limits.",
-    uncertainty:
-      raw.uncertainty ||
-      "Scientific understanding is generally clear, though minor variations may exist.",
+    name: clean(raw?.name, "Unknown ingredient"),
+
+    severity: clean(raw?.severity, "low").toLowerCase(),
+
+    what_it_is: clean(
+      raw?.what_it_is,
+      "This ingredient is a commonly used component in food products."
+    ),
+
+    why_it_is_used: clean(
+      raw?.why_it_is_used,
+      "It is included for functional reasons such as texture, stability, or taste."
+    ),
+
+    tradeoffs: clean(
+      raw?.tradeoffs,
+      "It has benefits in food formulation but should be consumed in moderation."
+    ),
+
+    uncertainty: clean(
+      raw?.uncertainty,
+      "Scientific understanding is generally clear, though minor variations may exist."
+    ),
   };
 }
+
 
 /* ---------------- ROUTE ---------------- */
 
@@ -44,8 +60,20 @@ router.post("/reasoning", async (req, res) => {
     const prompt = `
 You are an AI Ingredient Intelligence assistant.
 
-Your job is to analyze a list of food ingredients and respond in a calm,
-clear, human-expert tone.
+Analyze ONLY the following ingredients exactly as provided.
+DO NOT add, infer, or assume any other ingredients.
+
+INGREDIENTS:
+${ingredients}
+
+---
+
+Your job is to analyze ONLY the ingredients listed above.
+If only one ingredient is provided, return exactly one ingredient.
+Never add extra ingredients.
+...
+
+
 
 IMPORTANT OUTPUT RULES (STRICT):
 
