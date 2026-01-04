@@ -7,25 +7,38 @@ const router = express.Router();
 
 function clean(value, fallback) {
   if (typeof value !== "string") return fallback;
-  if (!value.trim()) return fallback;
-  return value.trim();
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
 }
 
 function normalizeIngredient(raw) {
   return {
-    name: raw?.name ?? null,
+    name: clean(raw?.name, "Unknown ingredient"),
 
-    severity: (raw?.severity ?? "low").toLowerCase(),
+    severity: clean(raw?.severity, "low").toLowerCase(),
 
-    what_it_is: raw?.what_it_is?.trim() || null,
+    what_it_is: clean(
+      raw?.what_it_is,
+      "This ingredient is commonly used in food products."
+    ),
 
-    why_it_is_used: raw?.why_it_is_used?.trim() || null,
+    why_it_is_used: clean(
+      raw?.why_it_is_used,
+      "It is added for functional or practical reasons in food preparation."
+    ),
 
-    tradeoffs: raw?.tradeoffs?.trim() || null,
+    tradeoffs: clean(
+      raw?.tradeoffs,
+      "There are no major trade-offs when consumed in normal amounts."
+    ),
 
-    uncertainty: raw?.uncertainty?.trim() || null,
+    uncertainty: clean(
+      raw?.uncertainty,
+      "Some variation may exist depending on source or usage."
+    ),
   };
 }
+
 
 
 
